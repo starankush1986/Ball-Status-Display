@@ -1,0 +1,391 @@
+// ==UserScript==
+// @name         Latest Ball Status Display - FIXED AUDIO
+// @namespace    http://tampermonkey.net/
+// @version      1.4
+// @description  Display latest ball status in existing page element with audio
+// @author       You
+// @match        https://score.radheexch.club/*
+// @include      https://www.radheexch.club/*
+// @grant        GM_addStyle
+// ==/UserScript==
+
+(function() {
+    'use strict';
+
+    if (window.ballStatusDisplayLoaded) {
+        return;
+    }
+    window.ballStatusDisplayLoaded = true;
+
+    GM_addStyle(`
+        .ball-status-display {
+            position: fixed !important;
+            top: 50px !important;
+            left: 20px !important;
+            background: #ffffff !important;
+            color: #000000 !important;
+            padding: 100px !important;
+            font-size: 48px !important;
+            text-shadow: 0px 0px 4px grey !important;
+            font-weight: bold !important;
+            z-index: 999999 !important;
+            width: 850px !important;
+            height: 350px !important;
+            text-align: center !important;
+            text-transform: uppercase;
+            font-family: Verdana !important;
+            border-radius: 10px !important;
+            border: 3px solid yellow !important;
+            -webkit-user-select: none !important;
+            -moz-user-select: none !important;
+            -ms-user-select: none !important;
+            user-select: none !important;
+            pointer-events: none !important;
+        }
+        .ball-status-controls {
+            position: fixed !important;
+            top: 10px !important;
+            left: 10px !important;
+            background: #28a745 !important;
+            color: white !important;
+            padding: 8px 12px !important;
+            border-radius: 6px !important;
+            font-size: 14px !important;
+            z-index: 999999 !important;
+            cursor: pointer !important;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2) !important;
+            border: 2px solid #1e7e34 !important;
+            font-family: Verdana !important;cursor: pointer;
+            user-select: none;
+        }
+        .ball-runs-large {
+            font-size: 120px !important;
+            color: black !important;
+            font-family: Verdana;
+            font-weight: bold !important;
+            text-shadow: 0px 0px 4px grey !important;
+            display: block !important;
+            line-height: 1.2 !important;
+            -webkit-user-select: none !important;
+            -moz-user-select: none !important;
+            -ms-user-select: none !important;
+            user-select: none !important;
+            pointer-events: none !important;
+        }
+        .ball-status-normal {
+            font-size: 80px !important;
+            text-shadow: 0px 0px 4px grey !important;
+            font-family: Verdana;
+            color: #000000 !important;
+            font-weight: bold !important;
+            display: block !important;
+            margin-bottom: 10px !important;
+            -webkit-user-select: none !important;
+            -moz-user-select: none !important;
+            -ms-user-select: none !important;
+            user-select: none !important;
+            pointer-events: none !important;
+        }
+        .audio-toggle {
+            position: fixed !important;
+            top: 10px !important;
+            left: 120px !important;
+            background: #007bff !important;
+            color: white !important;
+            padding: 8px 12px !important;
+            border-radius: 6px !important;
+            font-size: 14px !important;
+            z-index: 999999 !important;
+            cursor: pointer !important;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2) !important;
+            border: 2px solid #0056b3 !important;
+            font-family: Verdana !important;
+            cursor: pointer;
+            user-select: none;
+        }
+        #cricket_score_iframe {
+            min-widht: 300px !important;
+            height: 500px !important;
+        }
+    `);
+
+    let displayElement;
+    let controlButton;
+    let audioToggle;
+    let isDisplayActive = true;
+    let isAudioEnabled = true;
+    let lastBallStatusTime = 0;
+    let lastBallRunsTime = 0;
+    let currentRuns = '';
+    let lastPlayedAudio = '';
+    let audioElements = {};
+
+    // CUSTOM STATUS MAPPING
+    const statusMapping = {
+        "ball chalu": "BALL",
+        "drinks break": "BREAK",
+        "innings break": "BREAK",
+    };
+
+    // BALL RUNS MAPPING
+    const runsMapping = {
+        "w": "WICKET",
+        "0wd": "WIDE",
+        "0": "0",
+        "1": "1",
+        "2": "2",
+        "3": "3",
+        "4": "4",
+        "6": "6"
+    };
+
+    // BETTER AUDIO MAPPING - Using more reliable sources
+    const audioMapping = {
+        "BALL": "https://freesound.org/data/previews/586/586455_13234060-lq.ogg",
+        "WICKET": "https://freesound.org/data/previews/586/586597_13234060-lq.ogg",
+        "CATCH OUT": "https://freesound.org/data/previews/586/586597_13234060-lq.ogg",
+        "LBW OUT": "https://freesound.org/data/previews/586/586597_13234060-lq.ogg",
+        "0": "https://freesound.org/data/previews/587/587428_13234060-lq.ogg",
+        "1": "https://freesound.org/data/previews/587/587426_13234060-lq.ogg",
+        "2": "https://freesound.org/data/previews/587/587431_13234060-lq.ogg",
+        "3": "https://freesound.org/data/previews/587/587728_13234060-lq.ogg",
+        "4": "https://freesound.org/data/previews/587/587430_13234060-lq.ogg",
+        "6": "https://freesound.org/data/previews/587/587432_13234060-lq.ogg",
+        "Wide": "https://freesound.org/data/previews/586/586601_13234060-lq.ogg",
+        "No Ball": "https://freesound.org/data/previews/587/587429_13234060-lq.ogg",
+    };
+
+    // Preload audio files
+    function preloadAudio() {
+        console.log('Preloading audio files...');
+        Object.keys(audioMapping).forEach(key => {
+            const audio = new Audio();
+            audio.src = audioMapping[key];
+            audio.preload = 'auto';
+            audio.load();
+            audioElements[key] = audio;
+
+            // Handle audio loading errors
+            audio.addEventListener('error', (e) => {
+                console.log(`Failed to load audio for ${key}:`, e);
+            });
+
+            audio.addEventListener('canplaythrough', () => {
+                console.log(`Audio ready for: ${key}`);
+            });
+        });
+    }
+
+    function getCustomStatus(originalStatus) {
+        const lowerStatus = originalStatus.toLowerCase();
+        for (const [key, value] of Object.entries(statusMapping)) {
+            if (lowerStatus.includes(key.toLowerCase())) {
+                return value;
+            }
+        }
+        return originalStatus.toUpperCase();
+    }
+
+    function getCustomRuns(originalRuns) {
+        const trimmedRuns = originalRuns.trim();
+        if (runsMapping[trimmedRuns]) {
+            return runsMapping[trimmedRuns];
+        }
+        return trimmedRuns;
+    }
+
+    // Improved audio play function
+    function playAudioForText(text) {
+        if (!isAudioEnabled) return;
+        if (!text || lastPlayedAudio === text) return;
+
+        console.log(`Attempting to play audio for: ${text}`);
+        lastPlayedAudio = text;
+
+        try {
+            let audioToPlay;
+
+            if (audioElements[text]) {
+                audioToPlay = audioElements[text];
+            } else {
+                // Fallback: create new audio element
+                const audioUrl = audioMapping[text];
+                if (!audioUrl) {
+                    console.log(`No audio URL found for: ${text}`);
+                    return;
+                }
+                audioToPlay = new Audio(audioUrl);
+                audioElements[text] = audioToPlay;
+            }
+
+            // Reset audio to start
+            audioToPlay.currentTime = 0;
+
+            // Play audio with user interaction requirement handling
+            const playPromise = audioToPlay.play();
+
+            if (playPromise !== undefined) {
+                playPromise
+                    .then(() => {
+                        console.log(`Audio played successfully for: ${text}`);
+                    })
+                    .catch(error => {
+                        console.log(`Audio play failed for ${text}:`, error);
+                        // Try fallback method - create new audio context
+                        playAudioFallback(text);
+                    });
+            }
+        } catch (error) {
+            console.log(`Audio error for ${text}:`, error);
+        }
+    }
+
+    // Fallback audio method
+    function playAudioFallback(text) {
+        const audioUrl = audioMapping[text];
+        if (!audioUrl) return;
+
+        try {
+            const audio = new Audio(audioUrl);
+            audio.play().catch(e => {
+                console.log('Fallback audio also failed:', e);
+            });
+        } catch (error) {
+            console.log('Fallback audio creation failed:', error);
+        }
+    }
+
+    function createDisplay() {
+        const existing = document.querySelector('.ball-status-display');
+        if (existing) existing.remove();
+
+        displayElement = document.createElement('div');
+        displayElement.className = 'ball-status-display';
+        displayElement.id = 'ball-status-display';
+        displayElement.innerHTML = '<span class="ball-runs-large">Loading...</span>';
+        document.body.appendChild(displayElement);
+    }
+
+    function createControlButton() {
+        const existing = document.querySelector('.ball-status-controls');
+        if (existing) existing.remove();
+
+        controlButton = document.createElement('div');
+        controlButton.className = 'ball-status-controls';
+        controlButton.textContent = '🔴 HIDE';
+
+        controlButton.addEventListener('click', function() {
+            isDisplayActive = !isDisplayActive;
+            if (isDisplayActive) {
+                displayElement.style.display = 'block';
+                controlButton.textContent = '🔴 HIDE';
+                controlButton.style.background = '#28a745';
+            } else {
+                displayElement.style.display = 'none';
+                controlButton.textContent = '🟢 SHOW';
+                controlButton.style.background = '#dc3545';
+            }
+        });
+
+        document.body.appendChild(controlButton);
+    }
+
+    function createAudioToggle() {
+        const existing = document.querySelector('.audio-toggle');
+        if (existing) existing.remove();
+
+        audioToggle = document.createElement('div');
+        audioToggle.className = 'audio-toggle';
+        audioToggle.textContent = '🔊 SOUND ON';
+
+        audioToggle.addEventListener('click', function() {
+            isAudioEnabled = !isAudioEnabled;
+            if (isAudioEnabled) {
+                audioToggle.textContent = '🔊 SOUND ON';
+                audioToggle.style.background = '#007bff';
+                // Play test sound when enabling audio
+                playAudioForText('1');
+            } else {
+                audioToggle.textContent = '🔇 SOUND OFF';
+                audioToggle.style.background = '#6c757d';
+            }
+        });
+
+        document.body.appendChild(audioToggle);
+    }
+
+    function getLatestBallData() {
+        try {
+            let ballStatus = '';
+            let ballRuns = '';
+
+            const ballStatusElement = document.querySelector('.ballstatuscricket');
+            if (ballStatusElement && ballStatusElement.textContent.trim()) {
+                ballStatus = ballStatusElement.textContent.trim();
+                lastBallStatusTime = Date.now();
+            }
+
+            const ballRunsElements = document.querySelectorAll('.ball-runs');
+            if (ballRunsElements.length > 0) {
+                const latestBall = ballRunsElements[ballRunsElements.length - 1];
+                const newRuns = latestBall.textContent.trim();
+
+                if (newRuns !== currentRuns) {
+                    currentRuns = newRuns;
+                    lastBallRunsTime = Date.now();
+                    lastPlayedAudio = ''; // Reset to allow playing audio again for new runs
+                }
+                ballRuns = newRuns;
+            }
+
+            return { status: ballStatus, runs: ballRuns };
+        } catch (error) {
+            console.log('Error getting ball data:', error);
+            return { status: '', runs: '' };
+        }
+    }
+
+    function updateDisplay() {
+        if (!displayElement) return;
+
+        const ballData = getLatestBallData();
+        const currentTime = Date.now();
+
+        if (ballData.status) {
+            const customStatus = getCustomStatus(ballData.status);
+            displayElement.innerHTML = `<span class="ball-status-normal">${customStatus}</span>`;
+            playAudioForText(customStatus);
+        } else if (ballData.runs && (currentTime - lastBallRunsTime) <= 5000) {
+            const customRuns = getCustomRuns(ballData.runs);
+            displayElement.innerHTML = `<span class="ball-runs-large">${customRuns}</span>`;
+            playAudioForText(customRuns);
+        } else {
+            displayElement.innerHTML = '';
+            lastPlayedAudio = ''; // Reset when no content to allow replay
+        }
+    }
+
+    function init() {
+        setTimeout(() => {
+            createDisplay();
+            createControlButton();
+            createAudioToggle();
+            preloadAudio();
+
+            setInterval(updateDisplay, 1000);
+            updateDisplay();
+
+            // Add click handler to enable audio on user interaction
+            document.addEventListener('click', function() {
+                // This helps unlock audio autoplay
+                console.log('User interaction detected - audio should be unlocked');
+            });
+        }, 2000);
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
+})();
