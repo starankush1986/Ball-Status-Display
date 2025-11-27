@@ -7,7 +7,6 @@
 // @match        https://www.allpanelexch.app/*
 // @include      https://diamondexch99.com/*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=allpanelexch.app
-// @updateURL    https://raw.githubusercontent.com/starankush1986/Ball-Status-Display/refs/heads/main/Allpanel-Rates
 // @grant        none
 // @run-at       document-end
 // ==/UserScript==
